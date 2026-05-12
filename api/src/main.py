@@ -1,10 +1,11 @@
 """Punto de entrada de la aplicación FastAPI.
 
-Lifespan:
-  1. Carga el pipeline de pyannote (~30s la primera vez, descarga el modelo)
-  2. Monta los routers
+El pipeline de pyannote se carga en background al arrancar para no bloquear
+el puerto — Render hace timeout si el puerto no está abierto en ~60s y
+pyannote tarda varios minutos en descargar/cargar el modelo.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -17,8 +18,9 @@ from src.router import router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    initialize_pipeline()
+    # Carga pyannote en un thread para no bloquear el event loop ni el puerto
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, initialize_pipeline)
     yield
     # Shutdown (nada que limpiar por ahora)
 
