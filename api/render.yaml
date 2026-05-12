@@ -4,8 +4,8 @@ services:
     runtime: python
     region: frankfurt  # más cerca de España
     plan: starter      # free tier tiene timeout de 60s — usar starter para vídeos largos
-    buildCommand: pip install uv && uv pip install --system -e .
-    startCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install -e .
+    startCommand: python -m uvicorn src.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: API_KEY
         sync: false   # se rellena manualmente en el dashboard de Render
