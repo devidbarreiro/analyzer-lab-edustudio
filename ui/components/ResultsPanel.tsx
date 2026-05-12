@@ -4,9 +4,15 @@ import type { AnalysisResult } from "@/lib/types"
 import QualityCard from "./QualityCard"
 import SpeakersCard from "./SpeakersCard"
 import DenoiseCard from "./DenoiseCard"
+import AudioPlayer from "./AudioPlayer"
 import { Download } from "lucide-react"
 
-export default function ResultsPanel({ result }: { result: AnalysisResult }) {
+interface Props {
+  result: AnalysisResult
+  source: File | string
+}
+
+export default function ResultsPanel({ result, source }: Props) {
   const handleDownload = () => {
     const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" })
     const url = URL.createObjectURL(blob)
@@ -17,8 +23,11 @@ export default function ResultsPanel({ result }: { result: AnalysisResult }) {
     URL.revokeObjectURL(url)
   }
 
+  const duration = result.quality?.duration_s ?? 0
+
   return (
     <div className="space-y-4">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-semibold text-zinc-900">Resultados</h2>
@@ -33,8 +42,20 @@ export default function ResultsPanel({ result }: { result: AnalysisResult }) {
         </button>
       </div>
 
-      {result.quality && <QualityCard data={result.quality} />}
-      {result.denoise && <DenoiseCard data={result.denoise} />}
+      {/* Player — siempre visible si hay source */}
+      {source && (
+        <AudioPlayer
+          source={source}
+          duration={duration}
+          quality={result.quality}
+          speakers={result.speakers}
+          denoise={result.denoise}
+        />
+      )}
+
+      {/* Analysis cards */}
+      {result.quality  && <QualityCard  data={result.quality}  />}
+      {result.denoise  && <DenoiseCard  data={result.denoise}  />}
       {result.speakers && <SpeakersCard data={result.speakers} />}
     </div>
   )

@@ -10,7 +10,7 @@ import { AlertCircle, RotateCcw, Activity } from "lucide-react"
 type State =
   | { status: "idle" }
   | { status: "loading"; message: string }
-  | { status: "done"; result: AnalysisResult }
+  | { status: "done"; result: AnalysisResult; source: File | string }
   | { status: "error"; message: string }
 
 export default function AnalyzerApp() {
@@ -33,7 +33,7 @@ export default function AnalyzerApp() {
         steps,
         onProgress: (msg) => setState({ status: "loading", message: msg }),
       })
-      setState({ status: "done", result })
+      setState({ status: "done", result, source: file ?? url ?? "" })
     } catch (err) {
       const msg =
         err instanceof ApiError
@@ -106,7 +106,7 @@ export default function AnalyzerApp() {
               <RotateCcw className="w-4 h-4" />
               Nuevo análisis
             </button>
-            <ResultsPanel result={state.result} />
+            <ResultsPanel result={state.result} source={state.source} />
           </div>
         )}
       </main>
