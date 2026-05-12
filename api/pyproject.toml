@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "analyzer-lab-edustudio-api"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi[standard]>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic-settings>=2.0.0",
+    "python-multipart>=0.0.9",
+    # audio / ML
+    "torch",
+    "pyannote.audio",
+    "librosa",
+    "speechmos",
+    "onnxruntime",
+    "noisereduce",
+    "soundfile",
+    "numpy",
+    # http
+    "requests",
+    "httpx",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-mock>=3.12",
+    "httpx",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
