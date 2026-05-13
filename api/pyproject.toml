@@ -23,6 +23,10 @@ dependencies = [
     # http
     "requests",
     "httpx",
+    # storage S3-compatible
+    "boto3>=1.34",
+    # base de datos
+    "psycopg2-binary>=2.9",
 ]
 
 [project.optional-dependencies]

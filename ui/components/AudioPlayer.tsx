@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react"
 import { Play, Pause, Volume2, VolumeX } from "lucide-react"
-import type { QualityResult, SpeakersResult, DenoiseResult } from "@/lib/types"
+import type { QualityResult, SpeakersResult, DenoiseResult, SilencesResult } from "@/lib/types"
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -28,16 +28,17 @@ const SPEAKER_COLORS = [
 // ─── types ───────────────────────────────────────────────────────────────────
 
 interface Props {
-  source: File | string           // File (upload) or URL
-  duration: number                // seconds — from quality result
+  source: File | string
+  duration: number
   quality?: QualityResult
   speakers?: SpeakersResult
   denoise?: DenoiseResult
+  silences?: SilencesResult
 }
 
 // ─── component ───────────────────────────────────────────────────────────────
 
-export default function AudioPlayer({ source, duration, quality, speakers, denoise }: Props) {
+export default function AudioPlayer({ source, duration, quality, speakers, denoise, silences }: Props) {
   const audioRef   = useRef<HTMLAudioElement>(null)
   const waveCanvas = useRef<HTMLCanvasElement>(null)
   const ctxRef     = useRef<AudioContext | null>(null)
@@ -119,27 +120,46 @@ export default function AudioPlayer({ source, duration, quality, speakers, denoi
     const ctx = canvas.getContext("2d")!
     ctx.clearRect(0, 0, W, H)
 
-    // ── 1. DNSMOS heatmap bands (background) ─────────────────────────────
-    if (quality?.samples) {
-      const pts = quality.samples.map((s, i) => {
-        // positions: 10/25/50/75/90% of duration
-        const positions = [0.10, 0.25, 0.50, 0.75, 0.90]
-        return { x: positions[i] ?? i / quality.samples.length, ovrl: s.ovrl }
-      })
+    // ── 1. DNSMOS heatmap continuo (background interpolado) ──────────────
+    if (quality?.samples && quality.samples.length > 0) {
+      const n = quality.samples.length
+      // posiciones reales: 5,15,25,...95% distribuidas uniformemente
+      const positions = quality.samples.map((_, i) => (i + 0.5) / n)
 
-      // fill bands between consecutive sample points
-      const extended = [
-        { x: 0, ovrl: pts[0]?.ovrl ?? 3 },
-        ...pts,
-        { x: 1, ovrl: pts[pts.length - 1]?.ovrl ?? 3 },
+      // extender con primer y último valor para cubrir los extremos
+      const pts = [
+        { x: 0,   ovrl: quality.samples[0].ovrl },
+        ...quality.samples.map((s, i) => ({ x: positions[i], ovrl: s.ovrl })),
+        { x: 1,   ovrl: quality.samples[n - 1].ovrl },
       ]
-      for (let i = 0; i < extended.length - 1; i++) {
-        const x0 = extended[i].x * W
-        const x1 = extended[i + 1].x * W
-        const avgOvrl = (extended[i].ovrl + extended[i + 1].ovrl) / 2
-        ctx.fillStyle = mosColor(avgOvrl, 0.18)
-        ctx.fillRect(x0, 0, x1 - x0, H)
+
+      // pintar pixel a pixel interpolando linealmente entre puntos
+      const imgData = ctx.createImageData(W, H)
+      for (let px = 0; px < W; px++) {
+        const ratio = px / W
+        // encontrar segmento
+        let i = 0
+        while (i < pts.length - 2 && pts[i + 1].x < ratio) i++
+        const t = pts[i + 1].x === pts[i].x ? 0
+          : (ratio - pts[i].x) / (pts[i + 1].x - pts[i].x)
+        const ovrl = pts[i].ovrl + t * (pts[i + 1].ovrl - pts[i].ovrl)
+
+        // color según ovrl
+        let r = 0, g = 0, b = 0
+        if (ovrl >= 4.0)      { r = 16;  g = 185; b = 129 } // emerald
+        else if (ovrl >= 3.5) { r = 59;  g = 130; b = 246 } // blue
+        else if (ovrl >= 3.0) { r = 245; g = 158; b = 11  } // amber
+        else                  { r = 239; g = 68;  b = 68  } // red
+
+        for (let py = 0; py < H; py++) {
+          const idx = (py * W + px) * 4
+          imgData.data[idx]     = r
+          imgData.data[idx + 1] = g
+          imgData.data[idx + 2] = b
+          imgData.data[idx + 3] = 38  // alpha ~15%
+        }
       }
+      ctx.putImageData(imgData, 0, 0)
     }
 
     // ── 2. waveform bars ───────────────────────────────────────────────────
@@ -158,12 +178,13 @@ export default function AudioPlayer({ source, duration, quality, speakers, denoi
     }
 
     // ── 3. DNSMOS sample markers ───────────────────────────────────────────
-    if (quality?.samples) {
-      const positions = [0.10, 0.25, 0.50, 0.75, 0.90]
+    if (quality?.samples && quality.samples.length > 0) {
+      const n = quality.samples.length
       quality.samples.forEach((s, i) => {
-        const x = (positions[i] ?? i / quality.samples.length) * W
-        ctx.strokeStyle = mosColor(s.ovrl, 0.8)
-        ctx.lineWidth = 1.5
+        const pos = (i + 0.5) / n  // posición real del sample
+        const x = pos * W
+        ctx.strokeStyle = mosColor(s.ovrl, 0.7)
+        ctx.lineWidth = 1
         ctx.setLineDash([3, 3])
         ctx.beginPath()
         ctx.moveTo(x, 0)
@@ -171,11 +192,13 @@ export default function AudioPlayer({ source, duration, quality, speakers, denoi
         ctx.stroke()
         ctx.setLineDash([])
 
-        // label
-        ctx.fillStyle = mosColor(s.ovrl, 1)
-        ctx.font = "bold 9px monospace"
-        ctx.textAlign = "center"
-        ctx.fillText(s.ovrl.toFixed(2), x, H - 3)
+        // label — solo mostrar si hay espacio (más de 40px entre markers)
+        if (W / n > 40) {
+          ctx.fillStyle = mosColor(s.ovrl, 1)
+          ctx.font = "bold 9px monospace"
+          ctx.textAlign = "center"
+          ctx.fillText(s.ovrl.toFixed(2), x, H - 3)
+        }
       })
     }
 
@@ -197,7 +220,28 @@ export default function AudioPlayer({ source, duration, quality, speakers, denoi
       })
     }
 
-    // ── 5. playhead ────────────────────────────────────────────────────────
+    // ── 5. silencios ──────────────────────────────────────────────────────
+    if (silences?.silences && duration > 0) {
+      silences.silences.forEach((s) => {
+        const x = (s.start_s / duration) * W
+        const w = Math.max((s.duration_s / duration) * W, 2)
+        // franja semitransparente gris oscuro
+        ctx.fillStyle = "rgba(100,100,100,0.15)"
+        ctx.fillRect(x, 0, w, H)
+        // borde superior
+        ctx.fillStyle = "rgba(100,100,100,0.5)"
+        ctx.fillRect(x, 0, w, 2)
+        // etiqueta si hay espacio
+        if (w > 24) {
+          ctx.fillStyle = "rgba(80,80,80,0.8)"
+          ctx.font = "bold 8px monospace"
+          ctx.textAlign = "center"
+          ctx.fillText(`${s.duration_s.toFixed(0)}s`, x + w / 2, 10)
+        }
+      })
+    }
+
+    // ── 7. playhead ────────────────────────────────────────────────────────
     if (duration > 0) {
       const px = (currentT / duration) * W
       ctx.strokeStyle = "#1e40af"
@@ -217,7 +261,7 @@ export default function AudioPlayer({ source, duration, quality, speakers, denoi
       ctx.closePath()
       ctx.fill()
     }
-  }, [waveData, currentT, duration, quality, speakers])
+  }, [waveData, currentT, duration, quality, speakers, silences])
 
   useEffect(() => { drawCanvas() }, [drawCanvas])
 
@@ -382,6 +426,17 @@ export default function AudioPlayer({ source, duration, quality, speakers, denoi
                 {spk.label}{spk.is_main ? " (prof)" : ""}
               </span>
             ))}
+          </div>
+        )}
+
+        {/* Silencios legend */}
+        {silences && silences.num_silences > 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-zinc-400 uppercase tracking-wide">Silencios</span>
+            <span className="flex items-center gap-1 text-xs text-zinc-500">
+              <span className="w-2.5 h-2.5 rounded-sm bg-zinc-400 shrink-0 opacity-50" />
+              {silences.num_silences} silencio{silences.num_silences > 1 ? "s" : ""} ≥{silences.min_duration_s}s · {silences.silence_percentage}% del audio
+            </span>
           </div>
         )}
       </div>

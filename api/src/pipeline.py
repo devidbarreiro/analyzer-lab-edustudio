@@ -18,14 +18,23 @@ def initialize_pipeline() -> None:
         return
 
     hf_token = os.environ.get("HF_TOKEN")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
 
     print(f"[pipeline] Cargando pyannote/speaker-diarization-3.1 (device={device}) ...", flush=True)
     _pipeline = PyannotePipeline.from_pretrained(
         "pyannote/speaker-diarization-3.1",
-        use_auth_token=hf_token,
+        token=hf_token,
     ).to(device)
     print("[pipeline] Modelo listo.", flush=True)
+
+
+def is_pipeline_ready() -> bool:
+    return _pipeline is not None
 
 
 def get_pipeline() -> PyannotePipeline:

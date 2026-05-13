@@ -1,4 +1,20 @@
 export type Step = "quality" | "speakers" | "denoise"
+export type JobStatus = "pending" | "uploading" | "queued" | "processing" | "done" | "error"
+
+export interface Job {
+  id: string
+  label: string
+  filename: string
+  file_size: number | null
+  s3_key: string | null
+  status: JobStatus
+  steps: Step[]
+  progress: number
+  error_msg: string | null
+  results: AnalysisResult | null
+  created_at: string
+  updated_at: string
+}
 
 export interface QualitySample {
   position: string
@@ -61,10 +77,28 @@ export interface DenoiseResult {
   analysis_duration_s: number
 }
 
+export interface SilenceSegment {
+  start_s: number
+  end_s: number
+  duration_s: number
+  start_fmt: string
+  end_fmt: string
+}
+
+export interface SilencesResult {
+  silences: SilenceSegment[]
+  total_silence_s: number
+  silence_percentage: number
+  num_silences: number
+  min_duration_s: number
+  noise_db: number
+}
+
 export interface AnalysisResult {
   file: string
   steps_run: Step[]
   quality?: QualityResult
   speakers?: SpeakersResult
   denoise?: DenoiseResult
+  silences?: SilencesResult
 }

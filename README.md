@@ -14,13 +14,32 @@ analyzer-lab-edustudio/
 └── ui/      Next.js 16       → deploy en Vercel
 ```
 
-## Arranque local
+## Arranque local (Docker — recomendado)
 
-### API
+```bash
+# 1. Variables de entorno (solo la primera vez)
+cp api/.env.example api/.env    # edita HF_TOKEN
+
+# 2. Levantar Postgres + MinIO + API
+docker compose up --build
+
+# 3. UI (en otra terminal)
+cd ui
+cp .env.local.example .env.local
+npm install && npm run dev
+# → http://localhost:3000
+```
+
+Servicios disponibles:
+- API:            http://localhost:8000
+- MinIO consola:  http://localhost:9001  (minioadmin / minioadmin)
+- Postgres:       localhost:5432
+
+### Arranque manual (sin Docker)
 
 ```bash
 cd api
-cp .env.example .env       # rellena API_KEY y HF_TOKEN
+cp .env.example .env       # rellena API_KEY, HF_TOKEN y las vars de S3/DB
 pip install uv
 uv pip install -e .
 uvicorn src.main:app --reload
@@ -28,16 +47,6 @@ uvicorn src.main:app --reload
 ```
 
 > La primera vez tarda ~30s descargando pyannote desde HuggingFace.
-
-### UI
-
-```bash
-cd ui
-cp .env.local.example .env.local   # apunta a http://localhost:8000
-npm install
-npm run dev
-# → http://localhost:3000
-```
 
 ## Variables de entorno
 

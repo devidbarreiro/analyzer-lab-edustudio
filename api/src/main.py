@@ -12,17 +12,20 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import settings
+from src.db import close_db, init_db
 from src.pipeline import initialize_pipeline
 from src.router import router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Inicializar DB (crea tablas si no existen)
+    init_db()
     # Carga pyannote en un thread para no bloquear el event loop ni el puerto
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, initialize_pipeline)
     yield
-    # Shutdown (nada que limpiar por ahora)
+    close_db()
 
 
 app = FastAPI(

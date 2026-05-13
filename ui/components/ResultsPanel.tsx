@@ -42,7 +42,7 @@ export default function ResultsPanel({ result, source }: Props) {
         </button>
       </div>
 
-      {/* Player — siempre visible si hay source */}
+      {/* Player */}
       {source && (
         <AudioPlayer
           source={source}
@@ -50,12 +50,13 @@ export default function ResultsPanel({ result, source }: Props) {
           quality={result.quality}
           speakers={result.speakers}
           denoise={result.denoise}
+          silences={result.silences}
         />
       )}
 
-      {/* Analysis cards */}
-      {result.quality  && <QualityCard  data={result.quality}  />}
-      {result.denoise  && <DenoiseCard  data={result.denoise}  />}
+      {/* Cards */}
+      {result.quality  && <QualityCard data={result.quality} />}
+      {result.denoise  && <DenoiseCard data={result.denoise} source={source} />}
       {result.speakers && <SpeakersCard data={result.speakers} />}
     </div>
   )
