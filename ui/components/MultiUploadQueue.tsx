@@ -1,9 +1,15 @@
 "use client"
 
 import { useState, useCallback, useRef, useEffect } from "react"
-import { Upload, X, FileVideo, CheckCircle, AlertCircle, Loader2, Play } from "lucide-react"
+import { Upload, X, FileVideo, CheckCircle, AlertCircle, Loader2, Play, Clock } from "lucide-react"
 import { uploadFile, pollJob, formatBytes } from "@/lib/api"
 import type { Job, Step } from "@/lib/types"
+
+const STEP_LABELS: Record<string, string> = {
+  quality: "Analizando calidad",
+  denoise: "Reduciendo ruido",
+  speakers: "Detectando hablantes",
+}
 
 const UPLOAD_CONCURRENCY = 2   // máx uploads simultáneos
 
@@ -17,9 +23,10 @@ interface QueueItem {
   id: string           // local id (antes de tener job_id)
   file: File
   jobId?: string
-  status: "waiting" | "uploading" | "processing" | "done" | "error"
+  status: "waiting" | "uploading" | "queued" | "processing" | "done" | "error"
   phase: string
   percent: number
+  currentStep?: string | null
   error?: string
   job?: Job
 }
@@ -84,15 +91,20 @@ export default function MultiUploadQueue({ onJobDone, onViewResult }: Props) {
         },
       })
 
-      updateItem(item.id, { jobId, status: "processing", phase: "Analizando...", percent: 95 })
+      updateItem(item.id, { jobId, status: "queued", phase: "En cola...", percent: 95 })
 
       const job = await pollJob(jobId, (j) => {
-        const phase = j.status === "processing"
-          ? `Procesando... ${j.progress}%`
-          : j.status === "queued"
-          ? "En cola..."
-          : j.status
-        updateItem(item.id, { phase, percent: 95 + Math.round(j.progress * 0.05), job: j })
+        if (j.status === "queued") {
+          updateItem(item.id, { status: "queued", phase: "En cola...", percent: 95, job: j })
+        } else if (j.status === "processing") {
+          const stepLabel = j.current_step ? STEP_LABELS[j.current_step] ?? j.current_step : "Procesando"
+          const phase = `${stepLabel}...`
+          // Mapeo: upload ocupa 0-95, procesamiento 95-100 → usamos progreso real del backend
+          const percent = 95 + Math.round(j.progress * 0.05)
+          updateItem(item.id, { status: "processing", phase, percent, currentStep: j.current_step, job: j })
+        } else {
+          updateItem(item.id, { job: j })
+        }
       })
 
       if (job.status === "error") {
@@ -134,7 +146,7 @@ export default function MultiUploadQueue({ onJobDone, onViewResult }: Props) {
   }, [addFiles])
 
   const waitingCount = items.filter((i) => i.status === "waiting").length
-  const activeCount = items.filter((i) => i.status === "uploading" || i.status === "processing").length
+  const activeCount = items.filter((i) => ["uploading", "queued", "processing"].includes(i.status)).length
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
@@ -239,23 +251,39 @@ function QueueRow({
   onRemove: () => void
   onViewResult?: () => void
 }) {
-  const { file, status, phase, percent, error } = item
+  const { file, status, phase, percent, error, job } = item
 
   const statusIcon = {
-    waiting: <div className="w-4 h-4 rounded-full border-2 border-zinc-300" />,
-    uploading: <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />,
+    waiting:    <div className="w-4 h-4 rounded-full border-2 border-zinc-300" />,
+    uploading:  <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />,
+    queued:     <Clock className="w-4 h-4 text-amber-500" />,
     processing: <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />,
-    done: <CheckCircle className="w-4 h-4 text-green-500" />,
-    error: <AlertCircle className="w-4 h-4 text-red-500" />,
+    done:       <CheckCircle className="w-4 h-4 text-green-500" />,
+    error:      <AlertCircle className="w-4 h-4 text-red-500" />,
   }[status]
 
   const barColor = {
-    waiting: "bg-zinc-300",
-    uploading: "bg-blue-500",
-    processing: "bg-blue-400",
-    done: "bg-green-500",
-    error: "bg-red-400",
+    waiting:    "bg-zinc-300",
+    uploading:  "bg-blue-500",
+    queued:     "bg-amber-400",
+    processing: "bg-blue-500",
+    done:       "bg-green-500",
+    error:      "bg-red-400",
   }[status]
+
+  // Para processing mostramos el progreso real del backend (0-100), no el comprimido
+  const displayPercent = status === "processing" && job
+    ? job.progress
+    : status === "uploading"
+    // Durante upload el percent va de 2 a 92, lo remapeamos a 0-100
+    ? Math.min(100, Math.round(((percent - 2) / 90) * 100))
+    : percent
+
+  const phaseText = error
+    ? error.split("\n")[0]
+    : status === "queued"
+    ? "En cola — esperando slot de procesamiento"
+    : phase
 
   return (
     <div className="bg-white border border-zinc-200 rounded-xl p-4 flex items-center gap-4">
@@ -272,13 +300,22 @@ function QueueRow({
         {/* Barra de progreso */}
         {status !== "waiting" && (
           <div className="mt-1.5 space-y-1">
-            <div className="h-1.5 bg-zinc-100 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-300 ${barColor}`}
-                style={{ width: `${percent}%` }}
-              />
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+                  style={{ width: `${displayPercent}%` }}
+                />
+              </div>
+              {status !== "done" && status !== "error" && (
+                <span className="text-xs tabular-nums text-zinc-400 shrink-0 w-8 text-right">
+                  {displayPercent}%
+                </span>
+              )}
             </div>
-            <p className="text-xs text-zinc-500">{error ?? phase}</p>
+            <p className={`text-xs truncate ${error ? "text-red-500" : status === "queued" ? "text-amber-600" : "text-zinc-500"}`}>
+              {phaseText}
+            </p>
           </div>
         )}
       </div>

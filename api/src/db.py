@@ -2,18 +2,19 @@
 
 Esquema:
   jobs
-    id           UUID PK
-    label        TEXT          nombre del vídeo
-    filename     TEXT          nombre original del fichero
-    file_size    BIGINT        bytes
-    s3_key       TEXT          clave en el bucket (videos/<id>.<ext>)
-    status       TEXT          pending | uploading | queued | processing | done | error
-    steps        TEXT[]        pasos solicitados: quality, speakers, denoise
-    progress     INT           0-100
-    error_msg    TEXT          mensaje de error si status=error
-    results      JSONB         resultados del análisis
-    created_at   TIMESTAMPTZ
-    updated_at   TIMESTAMPTZ
+    id            UUID PK
+    label         TEXT          nombre del vídeo
+    filename      TEXT          nombre original del fichero
+    file_size     BIGINT        bytes
+    s3_key        TEXT          clave en el bucket (videos/<id>.<ext>)
+    status        TEXT          pending | uploading | queued | processing | done | error
+    steps         TEXT[]        pasos solicitados: quality, speakers, denoise
+    progress      INT           0-100
+    current_step  TEXT          step en curso: quality | denoise | speakers (null si no processing)
+    error_msg     TEXT          mensaje de error si status=error
+    results       JSONB         resultados del análisis
+    created_at    TIMESTAMPTZ
+    updated_at    TIMESTAMPTZ
 """
 
 import json
@@ -32,22 +33,34 @@ _pool: ThreadedConnectionPool | None = None
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS jobs (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    label       TEXT NOT NULL,
-    filename    TEXT NOT NULL,
-    file_size   BIGINT,
-    s3_key      TEXT,
-    status      TEXT NOT NULL DEFAULT 'pending',
-    steps       TEXT[] NOT NULL DEFAULT ARRAY['quality','speakers','denoise'],
-    progress    INT NOT NULL DEFAULT 0,
-    error_msg   TEXT,
-    results     JSONB,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    label         TEXT NOT NULL,
+    filename      TEXT NOT NULL,
+    file_size     BIGINT,
+    s3_key        TEXT,
+    status        TEXT NOT NULL DEFAULT 'pending',
+    steps         TEXT[] NOT NULL DEFAULT ARRAY['quality','speakers','denoise'],
+    progress      INT NOT NULL DEFAULT 0,
+    current_step  TEXT,
+    error_msg     TEXT,
+    results       JSONB,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_created_idx ON jobs(created_at DESC);
+
+-- Migración: añadir current_step si la tabla ya existe sin esa columna
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='jobs' AND column_name='current_step'
+    ) THEN
+        ALTER TABLE jobs ADD COLUMN current_step TEXT;
+    END IF;
+END$$;
 """
 
 
@@ -121,7 +134,7 @@ def job_list(limit: int = 100, offset: int = 0) -> list[dict]:
 
 def job_update(job_id: str, **fields) -> dict | None:
     """Actualiza campos arbitrarios + updated_at."""
-    allowed = {"s3_key", "status", "progress", "error_msg", "results", "file_size"}
+    allowed = {"s3_key", "status", "progress", "current_step", "error_msg", "results", "file_size"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return job_get(job_id)

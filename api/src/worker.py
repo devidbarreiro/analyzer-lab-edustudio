@@ -12,6 +12,7 @@ El flujo es:
 import logging
 import os
 import threading
+import time
 import traceback
 
 from src.db import job_get, job_update
@@ -51,11 +52,14 @@ def process_job(job_id: str) -> None:
 
     job_update(job_id, status="processing", progress=0)
     tmp_path = None
+    t_job_start = time.monotonic()
 
     try:
         # 1. Descargar vídeo de S3
         logger.info("Job %s — descargando %s", job_id, job["s3_key"])
+        t0 = time.monotonic()
         tmp_path = download_to_tmp(job["s3_key"])
+        logger.info("Job %s — descarga OK (%.1fs)", job_id, time.monotonic() - t0)
 
         steps = job["steps"]
         results: dict = {"file": job["label"], "steps_run": steps}
@@ -63,30 +67,36 @@ def process_job(job_id: str) -> None:
 
         # 2. Ejecutar pasos
         if "quality" in steps:
-            logger.info("Job %s — quality", job_id)
+            logger.info("Job %s — [quality] inicio", job_id)
+            t0 = time.monotonic()
             from src.analysis.quality import analyze as analyze_quality
             from src.analysis.silence import detect_silences
             results["quality"] = analyze_quality(tmp_path, job["label"])
             results["silences"] = detect_silences(tmp_path)
             progress += STEP_WEIGHTS["quality"]
-            job_update(job_id, progress=progress)
+            job_update(job_id, progress=progress, current_step="quality")
+            logger.info("Job %s — [quality] OK (%.1fs) → progress=%d", job_id, time.monotonic() - t0, progress)
 
         if "denoise" in steps:
-            logger.info("Job %s — denoise", job_id)
+            logger.info("Job %s — [denoise] inicio", job_id)
+            t0 = time.monotonic()
             from src.analysis.denoise import analyze_with_denoise
             results["denoise"] = analyze_with_denoise(tmp_path)
             progress += STEP_WEIGHTS["denoise"]
-            job_update(job_id, progress=progress)
+            job_update(job_id, progress=progress, current_step="denoise")
+            logger.info("Job %s — [denoise] OK (%.1fs) → progress=%d", job_id, time.monotonic() - t0, progress)
 
         if "speakers" in steps:
-            logger.info("Job %s — speakers", job_id)
+            logger.info("Job %s — [speakers] inicio", job_id)
+            t0 = time.monotonic()
             from src.analysis.speakers import detect_all_turns
             from src.pipeline import get_pipeline, is_pipeline_ready
             if not is_pipeline_ready():
                 raise RuntimeError("Pipeline de diarización no está listo")
             results["speakers"] = detect_all_turns(tmp_path, get_pipeline())
             progress += STEP_WEIGHTS["speakers"]
-            job_update(job_id, progress=progress)
+            job_update(job_id, progress=progress, current_step="speakers")
+            logger.info("Job %s — [speakers] OK (%.1fs) → progress=%d", job_id, time.monotonic() - t0, progress)
 
         # 3. Guardar resultados — serializar numpy
         import numpy as np
@@ -102,11 +112,13 @@ def process_job(job_id: str) -> None:
                 return int(obj)
             return obj
 
+        total_s = time.monotonic() - t_job_start
         job_update(job_id, status="done", progress=100, results=np_clean(results))
-        logger.info("Job %s — done", job_id)
+        logger.info("Job %s — done (total %.1fs)", job_id, total_s)
 
     except Exception as exc:
-        logger.error("Job %s — error: %s", job_id, exc)
+        total_s = time.monotonic() - t_job_start
+        logger.error("Job %s — error tras %.1fs: %s", job_id, total_s, exc)
         job_update(job_id, status="error", error_msg=traceback.format_exc())
 
     finally:

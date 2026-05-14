@@ -10,6 +10,7 @@ export interface Job {
   status: JobStatus
   steps: Step[]
   progress: number
+  current_step: Step | null
   error_msg: string | null
   results: AnalysisResult | null
   created_at: string

@@ -14,6 +14,7 @@ Endpoints:
 
 import asyncio
 import hmac
+import logging
 import os
 from typing import Annotated
 
@@ -27,6 +28,7 @@ from src.config import settings
 from src.db import job_create, job_delete, job_get, job_list, job_update
 from src.storage import delete_object, presigned_download_url, presigned_upload_url
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 security = HTTPBearer()
 
@@ -125,6 +127,7 @@ async def create_job(
 
     upload_url = presigned_upload_url(key, content_type=body.content_type, expires=7200)
 
+    logger.info("Job %s creado — label=%r steps=%s", job["id"], label, steps)
     return {
         "job": {**job, "s3_key": key},
         "upload_url": upload_url,
@@ -156,6 +159,7 @@ async def confirm_upload(
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _run_worker, job_id)
 
+    logger.info("Job %s confirmado — encolado para procesamiento", job_id)
     return {"job_id": job_id, "status": "queued"}
 
 
