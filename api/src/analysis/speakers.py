@@ -14,8 +14,6 @@ import subprocess
 import tempfile
 from collections import defaultdict
 
-from pyannote.audio import Pipeline
-
 SR = 16_000
 
 
@@ -61,7 +59,7 @@ def _unwrap_annotation(diarization):
     raise RuntimeError(f"No se puede extraer la anotación de {type(diarization).__name__}")
 
 
-def _run_diarization(source: str, pipeline: Pipeline):
+def _run_diarization(source: str, pipeline):
     audio_path, is_temp = _prepare_audio(source)
     try:
         raw = pipeline(audio_path)
@@ -116,7 +114,7 @@ def merge_speaker_turns(
 
 def detect_all_turns(
     source: str,
-    pipeline: Pipeline,
+    pipeline,
     merge_gap_seconds: float = 2.0,
     min_duration_seconds: float = 3.0,
 ) -> dict:

@@ -13,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import settings
 from src.db import close_db, init_db
-from src.pipeline import initialize_pipeline
 from src.router import router
 
 
@@ -21,9 +20,8 @@ from src.router import router
 async def lifespan(app: FastAPI):
     # Inicializar DB (crea tablas si no existen)
     init_db()
-    # Carga pyannote en un thread para no bloquear el event loop ni el puerto
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, initialize_pipeline)
+    # pyannote/torch se cargan bajo demanda al procesar el primer job
+    # para no consumir RAM en el arranque (Render starter = 512MB)
     yield
     close_db()
 

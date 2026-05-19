@@ -87,12 +87,13 @@ def process_job(job_id: str) -> None:
             logger.info("Job %s — [denoise] OK (%.1fs) → progress=%d", job_id, time.monotonic() - t0, progress)
 
         if "speakers" in steps:
-            logger.info("Job %s — [speakers] inicio", job_id)
+            logger.info("Job %s — [speakers] inicio (cargando pipeline si hace falta)", job_id)
             t0 = time.monotonic()
             from src.analysis.speakers import detect_all_turns
-            from src.pipeline import get_pipeline, is_pipeline_ready
+            from src.pipeline import get_pipeline, initialize_pipeline, is_pipeline_ready
             if not is_pipeline_ready():
-                raise RuntimeError("Pipeline de diarización no está listo")
+                logger.info("Job %s — cargando pyannote pipeline...", job_id)
+                initialize_pipeline()
             results["speakers"] = detect_all_turns(tmp_path, get_pipeline())
             progress += STEP_WEIGHTS["speakers"]
             job_update(job_id, progress=progress, current_step="speakers")
