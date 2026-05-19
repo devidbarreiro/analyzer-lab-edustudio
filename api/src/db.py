@@ -24,6 +24,7 @@ from typing import Any
 
 import psycopg2
 import psycopg2.extras
+from contextlib import contextmanager
 from psycopg2.pool import ThreadedConnectionPool
 
 from src.config import settings
@@ -67,13 +68,14 @@ END$$;
 def init_db() -> None:
     """Crea el pool y las tablas si no existen."""
     global _pool
-    _pool = ThreadedConnectionPool(minconn=1, maxconn=10, dsn=settings.database_url)
+    _pool = ThreadedConnectionPool(minconn=0, maxconn=10, dsn=settings.database_url)
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(CREATE_TABLE_SQL)
         conn.commit()
 
 
+@contextmanager
 def get_conn():
     """Context manager que devuelve una conexión del pool."""
     if _pool is None:
