@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     filename      TEXT NOT NULL,
     file_size     BIGINT,
     s3_key        TEXT,
+    video_url     TEXT,
     status        TEXT NOT NULL DEFAULT 'pending',
     steps         TEXT[] NOT NULL DEFAULT ARRAY['quality','speakers','denoise'],
     progress      INT NOT NULL DEFAULT 0,
@@ -52,7 +53,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_created_idx ON jobs(created_at DESC);
 
--- Migración: añadir current_step si la tabla ya existe sin esa columna
+-- Migrations
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -60,6 +61,12 @@ BEGIN
         WHERE table_name='jobs' AND column_name='current_step'
     ) THEN
         ALTER TABLE jobs ADD COLUMN current_step TEXT;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='jobs' AND column_name='video_url'
+    ) THEN
+        ALTER TABLE jobs ADD COLUMN video_url TEXT;
     END IF;
 END$$;
 """
@@ -136,10 +143,14 @@ def job_list(limit: int = 100, offset: int = 0) -> list[dict]:
 
 def job_update(job_id: str, **fields) -> dict | None:
     """Actualiza campos arbitrarios + updated_at."""
-    allowed = {"s3_key", "status", "progress", "current_step", "error_msg", "results", "file_size"}
+    allowed = {"s3_key", "video_url", "status", "progress", "current_step", "error_msg", "results", "file_size"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return job_get(job_id)
+
+    # Serializar JSONB manualmente para que psycopg2 lo acepte
+    if "results" in updates and isinstance(updates["results"], dict):
+        updates["results"] = json.dumps(updates["results"])
 
     set_parts = ", ".join(f"{k} = %s" for k in updates)
     values = list(updates.values()) + [datetime.now(timezone.utc), job_id]

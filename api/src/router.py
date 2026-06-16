@@ -62,6 +62,12 @@ class CreateJobRequest(BaseModel):
     content_type: str = "application/octet-stream"
 
 
+class AnalyzeUrlRequest(BaseModel):
+    video_url: str
+    label: str | None = None
+    steps: list[str] = ["quality", "speakers"]
+
+
 class ConfirmUploadRequest(BaseModel):
     file_size: int | None = None   # puede venir aquí si no se sabía antes
 
@@ -166,6 +172,41 @@ async def confirm_upload(
 def _run_worker(job_id: str) -> None:
     from src.worker import process_job
     process_job(job_id)
+
+
+@router.post("/jobs/analyze-url", status_code=202)
+async def analyze_url(
+    body: AnalyzeUrlRequest,
+    _: Annotated[str, Depends(verify_api_key)],
+):
+    """Analiza un vídeo desde una URL externa (sin upload a MinIO).
+
+    Flujo:
+    1. Cliente envía video_url + steps
+    2. API crea job (status=queued) con video_url
+    3. Worker descarga desde la URL y procesa
+    4. Cliente consulta GET /jobs/{id} para resultados
+    """
+    steps = _parse_steps(body.steps)
+    label = body.label or body.video_url.split("/")[-1].split("?")[0]
+
+    try:
+        job = job_create(
+            label=label,
+            filename=label,
+            file_size=None,
+            steps=steps,
+        )
+    except psycopg2.Error as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {e}")
+
+    job_update(job["id"], video_url=body.video_url, status="queued")
+
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, _run_worker, job["id"])
+
+    logger.info("Job %s creado desde URL — label=%r steps=%s", job["id"], label, steps)
+    return {"job": {**job, "video_url": body.video_url, "status": "queued"}}
 
 
 @router.get("/jobs")
