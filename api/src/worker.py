@@ -100,12 +100,27 @@ def _run_local_pipeline(job_id: str, tmp_path: str, steps: list[str], label: str
     return results
 
 
+def _to_internal_url(url: str) -> str:
+    """Rewrite public Supabase URLs to internal Kong for local downloads."""
+    internal = os.environ.get("SUPABASE_INTERNAL_URL", "")
+    if not internal:
+        return url
+    for public_base in [
+        os.environ.get("SUPABASE_PUBLIC_URL", ""),
+        "https://supabase-edu.ailumtech.com",
+    ]:
+        if public_base and url.startswith(public_base):
+            return url.replace(public_base, internal)
+    return url
+
+
 def _download_url_to_tmp(url: str) -> str:
     """Download a file from an external URL to a temp path."""
+    internal_url = _to_internal_url(url)
     ext = os.path.splitext(url.split("?")[0])[1] or ".mp4"
     tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
     tmp.close()
-    urllib.request.urlretrieve(url, tmp.name)
+    urllib.request.urlretrieve(internal_url, tmp.name)
     return tmp.name
 
 

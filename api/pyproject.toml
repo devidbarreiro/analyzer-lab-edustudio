@@ -20,6 +20,8 @@ dependencies = [
     "noisereduce",
     "soundfile",
     "numpy",
+    # modal GPU offload
+    "modal",
     # http
     "requests",
     "httpx",
